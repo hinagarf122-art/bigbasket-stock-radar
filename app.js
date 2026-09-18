@@ -3,7 +3,9 @@
   const MAX_LOCATIONS = 10;
   const DEFAULT_INTERVAL = '4';
   const STORE = 'bigbasket_stock_radar_v1';
-  const LICENSE_STORE = 'bigbasket_stock_license_v1';
+  const DEVICE_STORE = 'bigbasket_stock_device_v1';
+  function getDeviceId() { try { const saved = localStorage.getItem(DEVICE_STORE); if (saved) return saved; const id = window.crypto?.randomUUID?.() || `dev-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`; localStorage.setItem(DEVICE_STORE, id); return id; } catch { return `dev-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`; } }
+  const deviceId = getDeviceId();
   const state = { locations: [], products: [], rows: [], lastAvailable: new Set(), running: false, timer: null, wake: null, alarmTimer: null, muted: false, prompt: null, audio: null, licensed: false, license: '', licenseTimer: null };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
@@ -112,20 +114,16 @@
   function stopLicenseWatch() { clearInterval(state.licenseTimer); state.licenseTimer = null; }
   function licenseMessage(text, error = false) { $('licenseStatus').textContent = text; $('licenseStatus').classList.toggle('error', error); }
   function lockApp(message) { state.licensed = false; stopLicenseWatch(); stop(); document.body.classList.remove('licensed'); licenseMessage(message, true); }
-  async function verifyLicense(value, persist = true) {
-    const license = String(value || '').trim().toUpperCase();
-    if (!license) throw new Error('Enter a license ID.');
-    licenseMessage('Verifying license...');
-    const response = await fetch('/api/license', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ license }) });
+  async function verifyDevice() {
+    licenseMessage('Checking device activation...');
+    const response = await fetch('/api/license', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ license:deviceId }) });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.valid) throw new Error(data.error || 'Invalid license ID.');
-    state.licensed = true; state.license = license; document.body.classList.add('licensed');
-    if (persist) localStorage.setItem(LICENSE_STORE, license);
-    licenseMessage('License active. Next verification in 30 seconds.');
+    if (!response.ok || !data.valid) throw new Error('This device is not activated yet.');
+    state.licensed = true; state.license = deviceId; document.body.classList.add('licensed');
+    licenseMessage('Device active. Next check in 30 seconds.');
     stopLicenseWatch();
-    state.licenseTimer = setInterval(() => verifyLicense(state.license, false).catch(error => lockApp(error.message)), 30000);
+    state.licenseTimer = setInterval(() => verifyDevice().catch(error => lockApp(error.message)), 30000);
   }
-  async function activateLicense() { try { await verifyLicense($('licenseInput').value); } catch (error) { lockApp(error.message); } }
 
   async function scan() {
     if (!state.locations.length || !state.products.length) throw new Error('Select at least one location and one product first.');
@@ -149,7 +147,7 @@
   function wait(milliseconds) { return new Promise(resolve => { const done = () => { clearTimeout(state.timer); state.timer = null; state.wake = null; resolve(); }; state.wake = done; state.timer = setTimeout(done, milliseconds); }); }
   async function start() {
     if (state.running) return;
-    if (!state.licensed) throw new Error('Enter a valid license ID first.');
+    if (!state.licensed) throw new Error('This device is not activated yet.');
     await unlockAudio();
     stopStockAlarm();
     state.lastAvailable = new Set();
@@ -170,11 +168,11 @@
   $('productChips').addEventListener('click', event => { const button = event.target.closest('[data-remove-product]'); if (!button) return; state.products = state.products.filter(id => id !== button.dataset.removeProduct); renderProducts(); save(); });
    $('sound').addEventListener('click', async () => { state.muted = !state.muted; if (!state.muted) { await unlockAudio(); if (state.rows.some(row => row.available)) startStockAlarm(); else beep(); } else stopStockAlarm(); updateSound(); save(); });
    $('interval').addEventListener('change', save); $('start').addEventListener('click', start); $('stop').addEventListener('click', stop); $('clear').addEventListener('click', clearAll);
-   $('activateLicense').addEventListener('click', activateLicense); $('licenseInput').addEventListener('input', event => { event.target.value = event.target.value.toUpperCase(); }); $('licenseInput').addEventListener('keydown', event => { if (event.key === 'Enter') activateLicense(); });
+    $('deviceId').textContent = deviceId; $('copyDeviceId').addEventListener('click', async () => { try { await navigator.clipboard.writeText(deviceId); licenseMessage('Device ID copied. Send it to the admin.'); } catch { licenseMessage('Select and copy the Device ID manually.'); } });
   window.addEventListener('online', () => setNetwork('ok', 'Connected')); window.addEventListener('offline', () => setNetwork('error', 'Offline'));
   window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); state.prompt = event; $('install').style.display = 'block'; });
   $('install').addEventListener('click', async () => { if (!state.prompt) return; state.prompt.prompt(); await state.prompt.userChoice; state.prompt = null; $('install').style.display = 'none'; });
    try { const stored = JSON.parse(localStorage.getItem(STORE) || '{}'); state.locations = Array.isArray(stored.locations) ? stored.locations.slice(0, MAX_LOCATIONS) : []; state.products = Array.isArray(stored.products) ? stored.products : []; state.rows = Array.isArray(stored.rows) ? stored.rows : []; if (stored.intervalPreference && stored.interval) $('interval').value = stored.interval; else $('interval').value = DEFAULT_INTERVAL; if (typeof stored.muted === 'boolean' && stored.soundPreference) state.muted = stored.muted; } catch {}
    renderProducts(); renderLocations(); renderResults(); renderStockAlert(state.rows); updateSound(); setNetwork(navigator.onLine ? 'ok' : 'error', navigator.onLine ? 'Connected' : 'Offline');
-   const savedLicense = localStorage.getItem(LICENSE_STORE); if (savedLicense) verifyLicense(savedLicense, false).catch(error => licenseMessage(error.message, true));
+    verifyDevice().catch(error => licenseMessage(error.message, true));
 })();

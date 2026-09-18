@@ -19,12 +19,11 @@ Render settings
 
 License access
 
-- Add one license string per line to the array in `licenses.json`, for example `"BBR-..."`.
-- The browser sends the entered license to `POST /api/license` and rechecks it every 30 seconds.
-- The checker locks immediately when a recheck finds that the license is no longer listed.
-- Remove a license from `licenses.json` to lock it on the next check.
-- This simple list-based mode allows the same active license to work on more than one phone.
-- Replace the temporary IDs before production use. A private repository or secret-backed store is safer for real licenses.
+- Each browser installation displays its own Device ID.
+- Copy that Device ID into `licenses.json` as a plain string, for example `["96cf8fec-846b-457b-825b-83eb70785e11"]`.
+- The app checks the current Device ID every 30 seconds and unlocks automatically when it is listed.
+- Remove the Device ID from `licenses.json` to lock that device on the next check.
+- Clearing browser data, changing browser, or reinstalling creates a new Device ID.
 
 PWA installation
 
