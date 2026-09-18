@@ -33,5 +33,7 @@ Notes
   need updating after a BigBasket frontend deployment.
 - The UI supports 1 to 10 locations and defaults to one check every 4 seconds;
   aggressive polling can trigger BigBasket rate limits or temporary blocks.
+- When stock is available, the alert sound repeats until the item is no longer
+  available or the user presses Stop.
 - Availability is a snapshot. A product can sell out before checkout.
 - This project does not log in, place orders, or store user credentials.
