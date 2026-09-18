@@ -49,6 +49,13 @@
     $('errors').textContent = rows.filter(row => row.error).length;
   }
 
+  function renderStockAlert(rows, preferredRow = null) {
+    const available = rows.filter(row => row.available);
+    const row = preferredRow || available[0];
+    $('stockAlert').classList.toggle('show', Boolean(available.length));
+    if (row) $('stockAlertText').textContent = `${row.name || `Product ${row.productId}`} - ${row.locationLabel || row.pincode}`;
+  }
+
   function setNetwork(kind, text) { $('network').className = `network ${kind === 'error' ? 'error' : ''}`; $('network').textContent = text; }
   function showSuggestions(items, message = '') {
     const box = $('suggestions');
@@ -112,8 +119,10 @@
     $('status').textContent = state.rows.some(row => row.available) ? 'Stock found in one or more selected locations.' : 'No stock found in the selected locations.';
     renderResults(); save(); setNetwork('ok', 'Live data received');
     const currentAvailable = new Set(state.rows.filter(row => row.available).map(row => `${row.productId}:${row.pincode}`));
-    if ([...currentAvailable].some(key => !state.lastAvailable.has(key))) beep();
+    const newlyAvailable = state.rows.find(row => row.available && !state.lastAvailable.has(`${row.productId}:${row.pincode}`));
+    if (newlyAvailable) beep();
     state.lastAvailable = currentAvailable;
+    renderStockAlert(state.rows, newlyAvailable);
   }
 
   function wait(milliseconds) { return new Promise(resolve => { const done = () => { clearTimeout(state.timer); state.timer = null; state.wake = null; resolve(); }; state.wake = done; state.timer = setTimeout(done, milliseconds); }); }
@@ -142,5 +151,5 @@
   window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); state.prompt = event; $('install').style.display = 'block'; });
   $('install').addEventListener('click', async () => { if (!state.prompt) return; state.prompt.prompt(); await state.prompt.userChoice; state.prompt = null; $('install').style.display = 'none'; });
    try { const stored = JSON.parse(localStorage.getItem(STORE) || '{}'); state.locations = Array.isArray(stored.locations) ? stored.locations.slice(0, MAX_LOCATIONS) : []; state.products = Array.isArray(stored.products) ? stored.products : []; state.rows = Array.isArray(stored.rows) ? stored.rows : []; if (stored.intervalPreference && stored.interval) $('interval').value = stored.interval; else $('interval').value = DEFAULT_INTERVAL; if (typeof stored.muted === 'boolean' && stored.soundPreference) state.muted = stored.muted; } catch {}
-  renderProducts(); renderLocations(); renderResults(); updateSound(); setNetwork(navigator.onLine ? 'ok' : 'error', navigator.onLine ? 'Connected' : 'Offline');
+   renderProducts(); renderLocations(); renderResults(); renderStockAlert(state.rows); updateSound(); setNetwork(navigator.onLine ? 'ok' : 'error', navigator.onLine ? 'Connected' : 'Offline');
 })();
