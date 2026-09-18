@@ -2,11 +2,13 @@
   "name": "BigBasket Stock Radar",
   "short_name": "Stock Radar",
   "description": "Location-wise BigBasket product availability checker",
-  "start_url": "./",
-  "scope": "./",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#f8f8f8",
   "theme_color": "#e71d2b",
-  "icons": []
+  "icons": [
+    {"src":"/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+  ]
 }

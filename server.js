@@ -5,6 +5,7 @@ const { URL } = require('url');
 
 const locationHandler = require('./api/locations');
 const stockHandler = require('./api/stock');
+const licenseHandler = require('./api/license');
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT) || 3000;
@@ -14,6 +15,7 @@ const files = {
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/manifest.json': ['manifest.json', 'application/manifest+json; charset=utf-8'],
   '/sw.js': ['sw.js', 'text/javascript; charset=utf-8'],
+  '/icon-512.png': ['icon-512.png', 'image/png'],
 };
 
 function responseAdapter(res) {
@@ -57,6 +59,15 @@ async function handle(req, res) {
   if (pathname === '/api/locations') {
     const query = Object.fromEntries(requestUrl.searchParams.entries());
     return locationHandler({ method: req.method, query }, responseAdapter(res));
+  }
+
+  if (pathname === '/api/license') {
+    let body;
+    try { body = await readBody(req); } catch (error) {
+      res.statusCode = 400;
+      return res.end(JSON.stringify({ error: error.message }));
+    }
+    return licenseHandler({ method: req.method, body }, responseAdapter(res));
   }
 
   if (pathname === '/api/stock') {
