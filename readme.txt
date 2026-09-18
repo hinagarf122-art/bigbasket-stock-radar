@@ -31,6 +31,7 @@ Notes
   routes can change or rate-limit automated requests without notice.
 - BigBasket's Next.js product build ID is kept in `api/bigbasket.js` and may
   need updating after a BigBasket frontend deployment.
-- Do not poll aggressively. The UI defaults to one check every 30 seconds.
+- The UI supports 1 to 10 locations and defaults to one check every 4 seconds;
+  aggressive polling can trigger BigBasket rate limits or temporary blocks.
 - Availability is a snapshot. A product can sell out before checkout.
 - This project does not log in, place orders, or store user credentials.
