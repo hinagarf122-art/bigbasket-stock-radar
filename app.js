@@ -1,0 +1,139 @@
+(() => {
+  const MAX_PRODUCTS = 30;
+  const STORE = 'bigbasket_stock_radar_v1';
+  const state = { locations: [], products: [], rows: [], running: false, timer: null, wake: null, muted: true, prompt: null, audio: null };
+  const $ = id => document.getElementById(id);
+  const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+  const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ locations:state.locations, products:state.products, interval:$('interval').value, muted:state.muted, rows:state.rows })); } catch {} };
+
+  function productId(value) {
+    const text = String(value || '').trim();
+    const url = text.match(/\/pd\/(\d+)/i);
+    const id = url?.[1] || text.match(/^\d+$/)?.[0];
+    return id && /^\d+$/.test(id) ? id : '';
+  }
+
+  function renderCounts() {
+    $('productCount').textContent = `${state.products.length} / ${MAX_PRODUCTS}`;
+    $('locationCount').textContent = `${state.locations.length} selected`;
+    $('liveCount').textContent = state.locations.length;
+    $('setupHint').textContent = state.locations.length && state.products.length ? `${state.products.length * state.locations.length} live checks per scan.` : 'Select at least one location and one product to start.';
+  }
+
+  function renderProducts() {
+    $('productChips').innerHTML = state.products.map(id => `<span class="chip"><span>${escapeHtml(id)}</span><button type="button" data-remove-product="${escapeHtml(id)}" aria-label="Remove ${escapeHtml(id)}">&times;</button></span>`).join('');
+    renderCounts();
+  }
+
+  function renderLocations() {
+    $('locations').innerHTML = state.locations.map((item, index) => `<div class="location-chip"><button type="button" data-remove-location="${index}" aria-label="Remove location">&times;</button><b>${escapeHtml(item.pincode)}</b><span>${escapeHtml(item.area || item.address || 'Selected delivery area')}</span></div>`).join('');
+    const first = state.locations[0];
+    $('locationTitle').textContent = first ? `${first.pincode}, ${first.city || first.area || 'selected area'}` : 'Select delivery location';
+    $('locationSub').textContent = state.locations.length > 1 ? `${state.locations.length} delivery locations selected` : first ? 'BigBasket-style area selected' : 'Enter pincode like BigBasket';
+    renderCounts();
+  }
+
+  function renderResults() {
+    const rows = state.rows || [];
+    $('results').innerHTML = rows.length ? rows.map(row => {
+      const status = row.error ? 'na' : row.available ? 'in' : 'out';
+      const label = row.error ? 'CHECK ERROR' : row.available ? 'IN STOCK' : (row.label || 'OUT OF STOCK');
+      const price = row.price ? `Rs ${escapeHtml(row.price)}` : '-';
+      const delivery = row.eta || row.delivery || '-';
+      return `<tr><td><span class="product-title">${escapeHtml(row.name || `Product ${row.productId}`)}</span><span class="product-id">ID ${escapeHtml(row.productId)}</span></td><td>${escapeHtml(row.locationLabel || row.pincode)}</td><td><span class="pill ${status}">${label}</span>${row.error ? `<span class="meta">${escapeHtml(row.error)}</span>` : ''}</td><td>${price}</td><td>${escapeHtml(delivery)}</td></tr>`;
+    }).join('') : '<tr><td colspan="5" class="empty-row">No checks yet.</td></tr>';
+    $('inStock').textContent = rows.filter(row => row.available).length;
+    $('outStock').textContent = rows.filter(row => !row.available && !row.error).length;
+    $('errors').textContent = rows.filter(row => row.error).length;
+  }
+
+  function setNetwork(kind, text) { $('network').className = `network ${kind === 'error' ? 'error' : ''}`; $('network').textContent = text; }
+  function showSuggestions(items, message = '') {
+    const box = $('suggestions');
+    if (message) box.innerHTML = `<div class="${message === 'Searching...' ? 'loading' : 'empty-suggest'}">${escapeHtml(message)}</div>`;
+    else box.innerHTML = items.map(item => `<button class="suggestion" type="button" data-place-id="${escapeHtml(item.placeId)}"><span class="s-pin">&#9673;</span><span><b>${escapeHtml(item.mainText || item.pincode || item.description)}</b><span>${escapeHtml(item.secondaryText || item.description || '')}</span></span><span class="tick">Select</span></button>`).join('');
+    box.classList.add('open');
+  }
+
+  async function searchLocations() {
+    const query = $('locationSearch').value.trim();
+    if (query.length < 3) { $('suggestions').classList.remove('open'); return; }
+    showSuggestions([], 'Searching...');
+    try {
+      const response = await fetch(`/api/locations?query=${encodeURIComponent(query)}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Location search failed.');
+      showSuggestions(data.predictions || [], data.predictions?.length ? '' : 'No matching areas found.');
+      setNetwork('ok', 'Location search ready');
+    } catch (error) { showSuggestions([], error.message); setNetwork('error', 'Location search error'); }
+  }
+
+  async function selectLocation(placeId) {
+    showSuggestions([], 'Loading exact area...');
+    try {
+      const response = await fetch(`/api/locations?placeId=${encodeURIComponent(placeId)}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not select this location.');
+      const location = data.location;
+      if (!location?.pincode || !location?.lat || !location?.lng) throw new Error('BigBasket did not return a usable location.');
+      if (!state.locations.some(item => item.pincode === location.pincode && Math.abs(item.lat - location.lat) < .0001)) state.locations.push(location);
+      $('locationSearch').value = '';
+      $('suggestions').classList.remove('open');
+      renderLocations(); save(); setNetwork('ok', 'Location selected');
+    } catch (error) { showSuggestions([], error.message); setNetwork('error', 'Location selection error'); }
+  }
+
+  function addProduct() {
+    const id = productId($('productEntry').value);
+    if (!id) { $('status').textContent = 'Enter a numeric BigBasket product ID or product URL.'; return; }
+    if (state.products.length >= MAX_PRODUCTS) return;
+    if (!state.products.includes(id)) state.products.push(id);
+    $('productEntry').value = ''; renderProducts(); save();
+  }
+
+  function unlockAudio() { try { state.audio ||= new (window.AudioContext || window.webkitAudioContext)(); state.audio.resume(); } catch {} }
+  function beep() { if (state.muted || !state.audio) return; try { const osc = state.audio.createOscillator(); const gain = state.audio.createGain(); osc.frequency.value = 720; gain.gain.setValueAtTime(.001, state.audio.currentTime); gain.gain.exponentialRampToValueAtTime(.08, state.audio.currentTime + .02); gain.gain.exponentialRampToValueAtTime(.001, state.audio.currentTime + .28); osc.connect(gain).connect(state.audio.destination); osc.start(); osc.stop(state.audio.currentTime + .3); } catch {} }
+  function updateSound() { $('sound').textContent = `Sound: ${state.muted ? 'off' : 'on'}`; $('sound').classList.toggle('on', !state.muted); }
+
+  async function scan() {
+    if (!state.locations.length || !state.products.length) throw new Error('Select at least one location and one product first.');
+    $('status').textContent = `Checking ${state.products.length * state.locations.length} location checks...`;
+    $('progress').style.width = '18%';
+    const response = await fetch('/api/stock', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ products:state.products, locations:state.locations }) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `Stock request failed (${response.status}).`);
+    state.rows = Array.isArray(data.results) ? data.results : [];
+    $('progress').style.width = '100%';
+    $('lastChecked').textContent = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+    $('status').textContent = state.rows.some(row => row.available) ? 'Stock found in one or more selected locations.' : 'No stock found in the selected locations.';
+    renderResults(); save(); setNetwork('ok', 'Live data received');
+    if (state.rows.some(row => row.available)) beep();
+  }
+
+  function wait(milliseconds) { return new Promise(resolve => { const done = () => { clearTimeout(state.timer); state.timer = null; state.wake = null; resolve(); }; state.wake = done; state.timer = setTimeout(done, milliseconds); }); }
+  async function start() {
+    if (state.running) return;
+    unlockAudio();
+    state.running = true; $('start').disabled = true; $('stop').disabled = false; $('start').textContent = 'Checking live stock...';
+    try { while (state.running) { try { await scan(); } catch (error) { $('status').textContent = error.message; setNetwork('error', 'Check failed'); } if (state.running) await wait(Math.max(10, Number($('interval').value) || 30) * 1000); } }
+    finally { state.running = false; $('start').disabled = false; $('stop').disabled = true; $('start').textContent = 'Start live checking'; }
+  }
+  function stop() { state.running = false; clearTimeout(state.timer); state.timer = null; if (state.wake) state.wake(); $('status').textContent = 'Stopped. Last results are kept below.'; }
+  function clearAll() { stop(); state.rows = []; state.products = []; state.locations = []; $('progress').style.width = '0'; $('lastChecked').textContent = 'never'; renderProducts(); renderLocations(); renderResults(); save(); }
+
+  $('locationButton').addEventListener('click', () => { $('locationSearch').scrollIntoView({ behavior:'smooth', block:'center' }); $('locationSearch').focus(); });
+  $('locationSearch').addEventListener('input', () => { clearTimeout(state.searchTimer); state.searchTimer = setTimeout(searchLocations, 260); });
+  $('locationSearch').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); searchLocations(); } });
+  $('locationSearchButton').addEventListener('click', searchLocations);
+  $('suggestions').addEventListener('click', event => { const button = event.target.closest('[data-place-id]'); if (button) selectLocation(button.dataset.placeId); });
+  $('locations').addEventListener('click', event => { const button = event.target.closest('[data-remove-location]'); if (!button) return; state.locations.splice(Number(button.dataset.removeLocation), 1); renderLocations(); save(); });
+  $('addProduct').addEventListener('click', addProduct); $('productEntry').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); addProduct(); } });
+  $('productChips').addEventListener('click', event => { const button = event.target.closest('[data-remove-product]'); if (!button) return; state.products = state.products.filter(id => id !== button.dataset.removeProduct); renderProducts(); save(); });
+  $('sound').addEventListener('click', () => { state.muted = !state.muted; unlockAudio(); updateSound(); save(); });
+  $('interval').addEventListener('change', save); $('start').addEventListener('click', start); $('stop').addEventListener('click', stop); $('clear').addEventListener('click', clearAll);
+  window.addEventListener('online', () => setNetwork('ok', 'Connected')); window.addEventListener('offline', () => setNetwork('error', 'Offline'));
+  window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); state.prompt = event; $('install').style.display = 'block'; });
+  $('install').addEventListener('click', async () => { if (!state.prompt) return; state.prompt.prompt(); await state.prompt.userChoice; state.prompt = null; $('install').style.display = 'none'; });
+  try { const stored = JSON.parse(localStorage.getItem(STORE) || '{}'); state.locations = Array.isArray(stored.locations) ? stored.locations : []; state.products = Array.isArray(stored.products) ? stored.products : []; state.rows = Array.isArray(stored.rows) ? stored.rows : []; if (stored.interval) $('interval').value = stored.interval; state.muted = stored.muted !== false; } catch {}
+  renderProducts(); renderLocations(); renderResults(); updateSound(); setNetwork(navigator.onLine ? 'ok' : 'error', navigator.onLine ? 'Connected' : 'Offline');
+})();
