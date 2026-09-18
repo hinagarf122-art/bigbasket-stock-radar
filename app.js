@@ -3,7 +3,7 @@
   const MAX_LOCATIONS = 10;
   const DEFAULT_INTERVAL = '4';
   const STORE = 'bigbasket_stock_radar_v1';
-  const state = { locations: [], products: [], rows: [], running: false, timer: null, wake: null, muted: false, prompt: null, audio: null };
+  const state = { locations: [], products: [], rows: [], lastAvailable: new Set(), running: false, timer: null, wake: null, muted: false, prompt: null, audio: null };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
   const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ locations:state.locations, products:state.products, interval:$('interval').value, intervalPreference:true, muted:state.muted, soundPreference:true, rows:state.rows })); } catch {} };
@@ -96,7 +96,7 @@
   }
 
   async function unlockAudio() { try { state.audio ||= new (window.AudioContext || window.webkitAudioContext)(); if (state.audio.state === 'suspended') await state.audio.resume(); } catch {} }
-  function beep() { if (state.muted || !state.audio || state.audio.state !== 'running') return; try { const osc = state.audio.createOscillator(); const gain = state.audio.createGain(); osc.frequency.value = 720; gain.gain.setValueAtTime(.001, state.audio.currentTime); gain.gain.exponentialRampToValueAtTime(.08, state.audio.currentTime + .02); gain.gain.exponentialRampToValueAtTime(.001, state.audio.currentTime + .28); osc.connect(gain).connect(state.audio.destination); osc.start(); osc.stop(state.audio.currentTime + .3); } catch {} }
+  function beep() { if (state.muted || !state.audio || state.audio.state !== 'running') return; try { const now = state.audio.currentTime; const osc = state.audio.createOscillator(); const gain = state.audio.createGain(); osc.type = 'sine'; osc.frequency.setValueAtTime(880, now); osc.frequency.setValueAtTime(660, now + .16); gain.gain.setValueAtTime(.001, now); gain.gain.exponentialRampToValueAtTime(.18, now + .02); gain.gain.exponentialRampToValueAtTime(.001, now + .42); osc.connect(gain).connect(state.audio.destination); osc.start(now); osc.stop(now + .45); } catch {} }
   function updateSound() { $('sound').textContent = `Sound: ${state.muted ? 'off' : 'on'}`; $('sound').classList.toggle('on', !state.muted); }
 
   async function scan() {
@@ -106,25 +106,27 @@
     const response = await fetch('/api/stock', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ products:state.products, locations:state.locations }) });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || `Stock request failed (${response.status}).`);
-    const previousStock = new Set((state.rows || []).filter(row => row.available).map(row => `${row.productId}:${row.pincode}`));
     state.rows = Array.isArray(data.results) ? data.results : [];
     $('progress').style.width = '100%';
     $('lastChecked').textContent = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
     $('status').textContent = state.rows.some(row => row.available) ? 'Stock found in one or more selected locations.' : 'No stock found in the selected locations.';
     renderResults(); save(); setNetwork('ok', 'Live data received');
-    if (state.rows.some(row => row.available && !previousStock.has(`${row.productId}:${row.pincode}`))) beep();
+    const currentAvailable = new Set(state.rows.filter(row => row.available).map(row => `${row.productId}:${row.pincode}`));
+    if ([...currentAvailable].some(key => !state.lastAvailable.has(key))) beep();
+    state.lastAvailable = currentAvailable;
   }
 
   function wait(milliseconds) { return new Promise(resolve => { const done = () => { clearTimeout(state.timer); state.timer = null; state.wake = null; resolve(); }; state.wake = done; state.timer = setTimeout(done, milliseconds); }); }
   async function start() {
     if (state.running) return;
     await unlockAudio();
+    state.lastAvailable = new Set();
     state.running = true; $('start').disabled = true; $('stop').disabled = false; $('start').textContent = 'Checking live stock...';
     try { while (state.running) { try { await scan(); } catch (error) { $('status').textContent = error.message; setNetwork('error', 'Check failed'); } if (state.running) await wait(Math.max(4, Number($('interval').value) || 4) * 1000); } }
     finally { state.running = false; $('start').disabled = false; $('stop').disabled = true; $('start').textContent = 'Start live checking'; }
   }
   function stop() { state.running = false; clearTimeout(state.timer); state.timer = null; if (state.wake) state.wake(); $('status').textContent = 'Stopped. Last results are kept below.'; }
-  function clearAll() { stop(); state.rows = []; state.products = []; state.locations = []; $('progress').style.width = '0'; $('lastChecked').textContent = 'never'; renderProducts(); renderLocations(); renderResults(); save(); }
+  function clearAll() { stop(); state.rows = []; state.lastAvailable = new Set(); state.products = []; state.locations = []; $('progress').style.width = '0'; $('lastChecked').textContent = 'never'; renderProducts(); renderLocations(); renderResults(); save(); }
 
   $('locationButton').addEventListener('click', () => { $('locationSearch').scrollIntoView({ behavior:'smooth', block:'center' }); $('locationSearch').focus(); });
   $('locationSearch').addEventListener('input', () => { clearTimeout(state.searchTimer); state.searchTimer = setTimeout(searchLocations, 260); });
@@ -134,7 +136,7 @@
   $('locations').addEventListener('click', event => { const button = event.target.closest('[data-remove-location]'); if (!button) return; state.locations.splice(Number(button.dataset.removeLocation), 1); renderLocations(); save(); });
   $('addProduct').addEventListener('click', addProduct); $('productEntry').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); addProduct(); } });
   $('productChips').addEventListener('click', event => { const button = event.target.closest('[data-remove-product]'); if (!button) return; state.products = state.products.filter(id => id !== button.dataset.removeProduct); renderProducts(); save(); });
-   $('sound').addEventListener('click', () => { state.muted = !state.muted; void unlockAudio(); updateSound(); save(); });
+   $('sound').addEventListener('click', async () => { state.muted = !state.muted; if (!state.muted) { await unlockAudio(); beep(); } updateSound(); save(); });
   $('interval').addEventListener('change', save); $('start').addEventListener('click', start); $('stop').addEventListener('click', stop); $('clear').addEventListener('click', clearAll);
   window.addEventListener('online', () => setNetwork('ok', 'Connected')); window.addEventListener('offline', () => setNetwork('error', 'Offline'));
   window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); state.prompt = event; $('install').style.display = 'block'; });
