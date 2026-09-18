@@ -17,6 +17,17 @@ Render settings
 - Start command: `npm start`
 - Health check path: `/health`
 
+License access
+
+- The app accepts only IDs listed in `licenses.json` through `POST /api/license`.
+- The browser rechecks the license every 30 seconds and locks the checker if it becomes invalid.
+- Replace the temporary IDs in `licenses.json` before production use. This repository is public, so real IDs should be kept in a private repository or moved to a secret-backed store.
+
+PWA installation
+
+- Open the HTTPS URL in a supported mobile or desktop browser and use its Install or Add to Home Screen option.
+- The app includes a service worker and a 512px install icon.
+
 How location selection works
 
 The location picker uses BigBasket's public web autocomplete, place-details and
