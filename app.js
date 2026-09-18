@@ -4,9 +4,6 @@
   const DEFAULT_INTERVAL = '4';
   const STORE = 'bigbasket_stock_radar_v1';
   const LICENSE_STORE = 'bigbasket_stock_license_v1';
-  const DEVICE_STORE = 'bigbasket_stock_device_v1';
-  function getDeviceId() { try { const saved = localStorage.getItem(DEVICE_STORE); if (saved) return saved; const id = crypto.randomUUID ? crypto.randomUUID() : `dev-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`; localStorage.setItem(DEVICE_STORE, id); return id; } catch { return `dev-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`; } }
-  const deviceId = getDeviceId();
   const state = { locations: [], products: [], rows: [], lastAvailable: new Set(), running: false, timer: null, wake: null, alarmTimer: null, muted: false, prompt: null, audio: null, licensed: false, license: '', licenseTimer: null };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
@@ -119,7 +116,7 @@
     const license = String(value || '').trim().toUpperCase();
     if (!license) throw new Error('Enter a license ID.');
     licenseMessage('Verifying license...');
-    const response = await fetch('/api/license', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ license, deviceId }) });
+    const response = await fetch('/api/license', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ license }) });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.valid) throw new Error(data.error || 'Invalid license ID.');
     state.licensed = true; state.license = license; document.body.classList.add('licensed');
@@ -173,7 +170,7 @@
   $('productChips').addEventListener('click', event => { const button = event.target.closest('[data-remove-product]'); if (!button) return; state.products = state.products.filter(id => id !== button.dataset.removeProduct); renderProducts(); save(); });
    $('sound').addEventListener('click', async () => { state.muted = !state.muted; if (!state.muted) { await unlockAudio(); if (state.rows.some(row => row.available)) startStockAlarm(); else beep(); } else stopStockAlarm(); updateSound(); save(); });
    $('interval').addEventListener('change', save); $('start').addEventListener('click', start); $('stop').addEventListener('click', stop); $('clear').addEventListener('click', clearAll);
-   $('deviceId').textContent = deviceId; $('copyDeviceId').addEventListener('click', async () => { try { await navigator.clipboard.writeText(deviceId); licenseMessage('Device ID copied. Send it to the admin.'); } catch { licenseMessage('Select and copy the Device ID manually.'); } }); $('activateLicense').addEventListener('click', activateLicense); $('licenseInput').addEventListener('input', event => { event.target.value = event.target.value.toUpperCase(); }); $('licenseInput').addEventListener('keydown', event => { if (event.key === 'Enter') activateLicense(); });
+   $('activateLicense').addEventListener('click', activateLicense); $('licenseInput').addEventListener('input', event => { event.target.value = event.target.value.toUpperCase(); }); $('licenseInput').addEventListener('keydown', event => { if (event.key === 'Enter') activateLicense(); });
   window.addEventListener('online', () => setNetwork('ok', 'Connected')); window.addEventListener('offline', () => setNetwork('error', 'Offline'));
   window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); state.prompt = event; $('install').style.display = 'block'; });
   $('install').addEventListener('click', async () => { if (!state.prompt) return; state.prompt.prompt(); await state.prompt.userChoice; state.prompt = null; $('install').style.display = 'none'; });
