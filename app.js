@@ -105,7 +105,7 @@
     $('productEntry').value = ''; renderProducts(); save();
   }
 
-  async function unlockAudio() { try { state.audio ||= new (window.AudioContext || window.webkitAudioContext)(); if (state.audio.state === 'suspended') await state.audio.resume(); } catch {} }
+  async function unlockAudio() { try { state.audio ||= new (window.AudioContext || window.webkitAudioContext)(); if (state.audio.state === 'suspended') await Promise.race([state.audio.resume(), new Promise(resolve => setTimeout(resolve, 500))]); } catch {} }
   function beep() { if (state.muted || !state.audio || state.audio.state !== 'running') return; try { const now = state.audio.currentTime; const osc = state.audio.createOscillator(); const gain = state.audio.createGain(); osc.type = 'sine'; osc.frequency.setValueAtTime(880, now); osc.frequency.setValueAtTime(660, now + .16); gain.gain.setValueAtTime(.001, now); gain.gain.exponentialRampToValueAtTime(.18, now + .02); gain.gain.exponentialRampToValueAtTime(.001, now + .42); osc.connect(gain).connect(state.audio.destination); osc.start(now); osc.stop(now + .45); } catch {} }
   function stopStockAlarm() { clearInterval(state.alarmTimer); state.alarmTimer = null; }
   function startStockAlarm() { if (state.muted || state.alarmTimer || !state.audio || state.audio.state !== 'running') return; beep(); state.alarmTimer = setInterval(() => { if (state.muted || !state.audio || state.audio.state !== 'running') return stopStockAlarm(); beep(); }, 900); }
