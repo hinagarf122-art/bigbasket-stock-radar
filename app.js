@@ -26,7 +26,7 @@
   }
 
   function renderProducts() {
-    $('productChips').innerHTML = state.products.map(id => `<span class="chip"><span>${escapeHtml(id)}</span><button type="button" data-remove-product="${escapeHtml(id)}" aria-label="Remove ${escapeHtml(id)}">&times;</button></span>`).join('');
+    $('productChips').innerHTML = state.products.map(id => `<span class="chip"><span>${escapeHtml(id)}</span><button class="remove-product" type="button" data-remove-product="${escapeHtml(id)}" aria-label="Remove ${escapeHtml(id)}">Remove</button></span>`).join('');
     renderCounts();
   }
 
