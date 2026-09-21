@@ -10,26 +10,22 @@
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
   const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ locations:state.locations, products:state.products, interval:$('interval').value, intervalPreference:true, muted:state.muted, soundPreference:true, rows:state.rows })); } catch {} };
-
   function productId(value) {
     const text = String(value || '').trim();
     const url = text.match(/\/pd\/(\d+)/i);
     const id = url?.[1] || text.match(/^\d+$/)?.[0];
     return id && /^\d+$/.test(id) ? id : '';
   }
-
   function renderCounts() {
     $('productCount').textContent = `${state.products.length} / ${MAX_PRODUCTS}`;
     $('locationCount').textContent = `${state.locations.length} / ${MAX_LOCATIONS} selected`;
     $('liveCount').textContent = state.locations.length;
     $('setupHint').textContent = state.locations.length && state.products.length ? `${state.products.length * state.locations.length} live checks per scan.` : 'Select at least one location and one product to start.';
   }
-
   function renderProducts() {
     $('productChips').innerHTML = state.products.map(id => `<span class="chip"><span>${escapeHtml(id)}</span><button type="button" data-remove-product="${escapeHtml(id)}" aria-label="Remove ${escapeHtml(id)}">&times;</button></span>`).join('');
     renderCounts();
   }
-
   function renderLocations() {
     $('locations').innerHTML = state.locations.map((item, index) => `<div class="location-chip"><button type="button" data-remove-location="${index}" aria-label="Remove location">&times;</button><b>${escapeHtml(item.pincode)}</b><span>${escapeHtml(item.area || item.address || 'Selected delivery area')}</span></div>`).join('');
     const first = state.locations[0];
@@ -37,7 +33,6 @@
     $('locationSub').textContent = state.locations.length > 1 ? `${state.locations.length} delivery locations selected` : first ? 'BigBasket-style area selected' : 'Enter pincode like BigBasket';
     renderCounts();
   }
-
   function renderResults() {
     const rows = state.rows || [];
     $('results').innerHTML = rows.length ? rows.map(row => {
@@ -51,14 +46,12 @@
     $('outStock').textContent = rows.filter(row => !row.available && !row.error).length;
     $('errors').textContent = rows.filter(row => row.error).length;
   }
-
   function renderStockAlert(rows, preferredRow = null) {
     const available = rows.filter(row => row.available);
     const row = preferredRow || available[0];
     $('stockAlert').classList.toggle('show', Boolean(available.length));
     if (row) $('stockAlertText').textContent = `${row.name || `Product ${row.productId}`} - ${row.locationLabel || row.pincode}`;
   }
-
   function setNetwork(kind, text) { $('network').className = `network ${kind === 'error' ? 'error' : ''}`; $('network').textContent = text; }
   function showSuggestions(items, message = '') {
     const box = $('suggestions');
@@ -66,7 +59,6 @@
     else box.innerHTML = items.map(item => `<button class="suggestion" type="button" data-place-id="${escapeHtml(item.placeId)}"><span class="s-pin">&#9673;</span><span><b>${escapeHtml(item.mainText || item.pincode || item.description)}</b><span>${escapeHtml(item.secondaryText || item.description || '')}</span></span><span class="tick">Select</span></button>`).join('');
     box.classList.add('open');
   }
-
   async function searchLocations() {
     const query = $('locationSearch').value.trim();
     if (query.length < 3) { $('suggestions').classList.remove('open'); return; }
@@ -79,7 +71,6 @@
       setNetwork('ok', 'Location search ready');
     } catch (error) { showSuggestions([], error.message); setNetwork('error', 'Location search error'); }
   }
-
   async function selectLocation(placeId) {
     showSuggestions([], 'Loading exact area...');
     try {
@@ -87,15 +78,14 @@
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Could not select this location.');
       const location = data.location;
-       if (!location?.pincode || !location?.lat || !location?.lng) throw new Error('BigBasket did not return a usable location.');
-       const duplicate = state.locations.some(item => item.pincode === location.pincode && Math.abs(item.lat - location.lat) < .0001);
-       if (!duplicate && state.locations.length >= MAX_LOCATIONS) throw new Error(`Maximum ${MAX_LOCATIONS} locations reached.`);
-       if (!duplicate) state.locations.push(location);
+      if (!location?.pincode || !location?.lat || !location?.lng) throw new Error('BigBasket did not return a usable location.');
+      const duplicate = state.locations.some(item => item.pincode === location.pincode && Math.abs(item.lat - location.lat) < .0001);
+      if (!duplicate && state.locations.length >= MAX_LOCATIONS) throw new Error(`Maximum ${MAX_LOCATIONS} locations reached.`);
+      if (!duplicate) state.locations.push(location);
       $('locationSearch').value = '';$('suggestions').classList.remove('open');
       renderLocations(); save(); setNetwork('ok', 'Location selected');
     } catch (error) { showSuggestions([], error.message); setNetwork('error', 'Location selection error'); }
   }
-
   function addProduct() {
     const id = productId($('productEntry').value);
     if (!id) { $('status').textContent = 'Enter a numeric BigBasket product ID or product URL.'; return; }
@@ -103,13 +93,11 @@
     if (!state.products.includes(id)) state.products.push(id);
     $('productEntry').value = ''; renderProducts(); save();
   }
-
   async function unlockAudio() { try { state.audio ||= new (window.AudioContext || window.webkitAudioContext)(); if (state.audio.state === 'suspended') await state.audio.resume(); } catch {} }
   function beep() { if (state.muted || !state.audio || state.audio.state !== 'running') return; try { const now = state.audio.currentTime; const osc = state.audio.createOscillator(); const gain = state.audio.createGain(); osc.type = 'sine'; osc.frequency.setValueAtTime(880, now); osc.frequency.setValueAtTime(660, now + .16); gain.gain.setValueAtTime(.001, now); gain.gain.exponentialRampToValueAtTime(.18, now + .02); gain.gain.exponentialRampToValueAtTime(.001, now + .42); osc.connect(gain).connect(state.audio.destination); osc.start(now); osc.stop(now + .45); } catch {} }
   function stopStockAlarm() { clearInterval(state.alarmTimer); state.alarmTimer = null; }
   function startStockAlarm() { if (state.muted || state.alarmTimer || !state.audio || state.audio.state !== 'running') return; beep(); state.alarmTimer = setInterval(() => { if (state.muted || !state.audio || state.audio.state !== 'running') return stopStockAlarm(); beep(); }, 900); }
   function updateSound() { $('sound').textContent = `Sound: ${state.muted ? 'off' : 'on'}`; $('sound').classList.toggle('on', !state.muted); }
-
   async function requestWakeLock() {
     try {
       if ('wakeLock' in navigator) {
@@ -121,7 +109,6 @@
       window.dispatchEvent(new MouseEvent('mousemove'));
     }, 120000);
   }
-
   function releaseWakeLock() {
     try {
       if (state.wakeLockSentinel) {
@@ -132,7 +119,6 @@
     clearInterval(state.keepAliveTimer);
     state.keepAliveTimer = null;
   }
-
   function stopLicenseWatch() { clearInterval(state.licenseTimer); state.licenseTimer = null; }
   function licenseMessage(text, error = false) { $('licenseStatus').textContent = text; $('licenseStatus').classList.toggle('error', error); }
   function lockApp(message) { state.licensed = false; stopLicenseWatch(); stop(); document.body.classList.remove('licensed'); licenseMessage(message, true); }
@@ -158,7 +144,6 @@
       throw error;
     }
   }
-
   async function scan() {
     if (!state.locations.length || !state.products.length) throw new Error('Select at least one location and one product first.');
     $('status').textContent = `Checking ${state.products.length * state.locations.length} location checks...`;
@@ -176,7 +161,6 @@
     renderStockAlert(state.rows, newlyAvailable);
     if (currentAvailable.size) startStockAlarm(); else stopStockAlarm();
   }
-
   function wait(milliseconds) { return new Promise(resolve => { const done = () => { clearTimeout(state.timer); state.timer = null; state.wake = null; resolve(); }; state.wake = done; state.timer = setTimeout(done, milliseconds); }); }
   async function start() {
     if (state.running) return;
@@ -190,7 +174,6 @@
     finally { releaseWakeLock(); state.running = false; $('start').disabled = false; $('stop').disabled = true; $('start').textContent = 'Start live checking'; }
   }
   function stop() { releaseWakeLock(); state.running = false; stopStockAlarm(); clearTimeout(state.timer); state.timer = null; if (state.wake) state.wake(); $('status').textContent = 'Stopped. Last results are kept below.'; }
-
   $('locationButton').addEventListener('click', () => { $('locationSearch').scrollIntoView({ behavior:'smooth', block:'center' });$('locationSearch').focus(); });
   $('locationSearch').addEventListener('input', () => { clearTimeout(state.searchTimer); state.searchTimer = setTimeout(searchLocations, 260); });$('locationSearch').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); searchLocations(); } });
   $('locationSearchButton').addEventListener('click', searchLocations);$('suggestions').addEventListener('click', event => { const button = event.target.closest('[data-place-id]'); if (button) selectLocation(button.dataset.placeId); });
