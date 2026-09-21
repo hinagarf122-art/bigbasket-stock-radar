@@ -6,7 +6,7 @@
   const DEVICE_STORE = 'bigbasket_stock_device_v1';
   function getDeviceId() { try { const saved = localStorage.getItem(DEVICE_STORE); if (saved) return saved; const id = window.crypto?.randomUUID?.() || `dev-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`; localStorage.setItem(DEVICE_STORE, id); return id; } catch { return `dev-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`; } }
   const deviceId = getDeviceId();
-  const state = { locations: [], products: [], rows: [], lastAvailable: new Set(), running: false, timer: null, wake: null, alarmTimer: null, muted: false, prompt: null, audio: null, licensed: false, license: '', licenseTimer: null };
+  const state = { locations: [], products: [], rows: [], lastAvailable: new Set(), running: false, timer: null, wake: null, alarmTimer: null, muted: false, prompt: null, audio: null, licensed: false, license: '', licenseTimer: null, wakeLockSentinel: null, keepAliveTimer: null };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
   const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ locations:state.locations, products:state.products, interval:$('interval').value, intervalPreference:true, muted:state.muted, soundPreference:true, rows:state.rows })); } catch {} };
@@ -91,8 +91,7 @@
        const duplicate = state.locations.some(item => item.pincode === location.pincode && Math.abs(item.lat - location.lat) < .0001);
        if (!duplicate && state.locations.length >= MAX_LOCATIONS) throw new Error(`Maximum ${MAX_LOCATIONS} locations reached.`);
        if (!duplicate) state.locations.push(location);
-      $('locationSearch').value = '';
-      $('suggestions').classList.remove('open');
+      $('locationSearch').value = '';$('suggestions').classList.remove('open');
       renderLocations(); save(); setNetwork('ok', 'Location selected');
     } catch (error) { showSuggestions([], error.message); setNetwork('error', 'Location selection error'); }
   }
@@ -111,18 +110,53 @@
   function startStockAlarm() { if (state.muted || state.alarmTimer || !state.audio || state.audio.state !== 'running') return; beep(); state.alarmTimer = setInterval(() => { if (state.muted || !state.audio || state.audio.state !== 'running') return stopStockAlarm(); beep(); }, 900); }
   function updateSound() { $('sound').textContent = `Sound: ${state.muted ? 'off' : 'on'}`; $('sound').classList.toggle('on', !state.muted); }
 
+  async function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) {
+        state.wakeLockSentinel = await navigator.wakeLock.request('screen');
+      }
+    } catch {}
+    clearInterval(state.keepAliveTimer);
+    state.keepAliveTimer = setInterval(() => {
+      window.dispatchEvent(new MouseEvent('mousemove'));
+    }, 120000);
+  }
+
+  function releaseWakeLock() {
+    try {
+      if (state.wakeLockSentinel) {
+        state.wakeLockSentinel.release();
+        state.wakeLockSentinel = null;
+      }
+    } catch {}
+    clearInterval(state.keepAliveTimer);
+    state.keepAliveTimer = null;
+  }
+
   function stopLicenseWatch() { clearInterval(state.licenseTimer); state.licenseTimer = null; }
   function licenseMessage(text, error = false) { $('licenseStatus').textContent = text; $('licenseStatus').classList.toggle('error', error); }
   function lockApp(message) { state.licensed = false; stopLicenseWatch(); stop(); document.body.classList.remove('licensed'); licenseMessage(message, true); }
   async function verifyDevice() {
     licenseMessage('Checking device activation...');
-    const response = await fetch('/api/license', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ license:deviceId }) });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.valid) throw new Error('This device is not activated yet.');
-    state.licensed = true; state.license = deviceId; document.body.classList.add('licensed');
-    licenseMessage('Device active. Next check in 30 seconds.');
-    stopLicenseWatch();
-    state.licenseTimer = setInterval(() => verifyDevice().catch(error => lockApp(error.message)), 30000);
+    try {
+      const response = await fetch('/api/license', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ license:deviceId }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.valid) {
+        if (response.status === 401 || response.status === 403 || data.valid === false) {
+          throw new Error('This device is not activated yet.');
+        }
+        return;
+      }
+      state.licensed = true; state.license = deviceId; document.body.classList.add('licensed');
+      licenseMessage('Device active. Next check in 30 seconds.');
+      stopLicenseWatch();
+      state.licenseTimer = setInterval(() => verifyDevice().catch(error => {
+        if (error.message.includes('not activated')) lockApp(error.message);
+      }), 30000);
+    } catch (error) {
+      if (state.licensed && !error.message.includes('not activated')) return;
+      throw error;
+    }
   }
 
   async function scan() {
@@ -134,8 +168,7 @@
     if (!response.ok) throw new Error(data.error || `Stock request failed (${response.status}).`);
     state.rows = Array.isArray(data.results) ? data.results : [];
     $('progress').style.width = '100%';
-    $('lastChecked').textContent = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-    $('status').textContent = state.rows.some(row => row.available) ? 'Stock found in one or more selected locations.' : 'No stock found in the selected locations.';
+    $('lastChecked').textContent = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });$('status').textContent = state.rows.some(row => row.available) ? 'Stock found in one or more selected locations.' : 'No stock found in the selected locations.';
     renderResults(); save(); setNetwork('ok', 'Live data received');
     const currentAvailable = new Set(state.rows.filter(row => row.available).map(row => `${row.productId}:${row.pincode}`));
     const newlyAvailable = state.rows.find(row => row.available && !state.lastAvailable.has(`${row.productId}:${row.pincode}`));
@@ -149,30 +182,26 @@
     if (state.running) return;
     if (!state.licensed) throw new Error('This device is not activated yet.');
     await unlockAudio();
+    await requestWakeLock();
     stopStockAlarm();
     state.lastAvailable = new Set();
     state.running = true; $('start').disabled = true; $('stop').disabled = false; $('start').textContent = 'Checking live stock...';
     try { while (state.running) { try { await scan(); } catch (error) { $('status').textContent = error.message; setNetwork('error', 'Check failed'); } if (state.running) await wait(Math.max(4, Number($('interval').value) || 4) * 1000); } }
-    finally { state.running = false; $('start').disabled = false; $('stop').disabled = true; $('start').textContent = 'Start live checking'; }
+    finally { releaseWakeLock(); state.running = false; $('start').disabled = false; $('stop').disabled = true; $('start').textContent = 'Start live checking'; }
   }
-  function stop() { state.running = false; stopStockAlarm(); clearTimeout(state.timer); state.timer = null; if (state.wake) state.wake(); $('status').textContent = 'Stopped. Last results are kept below.'; }
-  function clearAll() { stop(); state.rows = []; state.lastAvailable = new Set(); state.products = []; state.locations = []; $('progress').style.width = '0'; $('lastChecked').textContent = 'never'; renderProducts(); renderLocations(); renderResults(); save(); }
+  function stop() { releaseWakeLock(); state.running = false; stopStockAlarm(); clearTimeout(state.timer); state.timer = null; if (state.wake) state.wake(); $('status').textContent = 'Stopped. Last results are kept below.'; }
 
-  $('locationButton').addEventListener('click', () => { $('locationSearch').scrollIntoView({ behavior:'smooth', block:'center' }); $('locationSearch').focus(); });
-  $('locationSearch').addEventListener('input', () => { clearTimeout(state.searchTimer); state.searchTimer = setTimeout(searchLocations, 260); });
-  $('locationSearch').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); searchLocations(); } });
-  $('locationSearchButton').addEventListener('click', searchLocations);
-  $('suggestions').addEventListener('click', event => { const button = event.target.closest('[data-place-id]'); if (button) selectLocation(button.dataset.placeId); });
-  $('locations').addEventListener('click', event => { const button = event.target.closest('[data-remove-location]'); if (!button) return; state.locations.splice(Number(button.dataset.removeLocation), 1); renderLocations(); save(); });
-  $('addProduct').addEventListener('click', addProduct); $('productEntry').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); addProduct(); } });
-  $('productChips').addEventListener('click', event => { const button = event.target.closest('[data-remove-product]'); if (!button) return; state.products = state.products.filter(id => id !== button.dataset.removeProduct); renderProducts(); save(); });
-   $('sound').addEventListener('click', async () => { state.muted = !state.muted; if (!state.muted) { await unlockAudio(); if (state.rows.some(row => row.available)) startStockAlarm(); else beep(); } else stopStockAlarm(); updateSound(); save(); });
-   $('interval').addEventListener('change', save); $('start').addEventListener('click', start); $('stop').addEventListener('click', stop); $('clear').addEventListener('click', clearAll);
-    $('deviceId').textContent = deviceId; $('copyDeviceId').addEventListener('click', async () => { try { await navigator.clipboard.writeText(deviceId); licenseMessage('Device ID copied. Send it to the admin.'); } catch { licenseMessage('Select and copy the Device ID manually.'); } });
+  $('locationButton').addEventListener('click', () => { $('locationSearch').scrollIntoView({ behavior:'smooth', block:'center' });$('locationSearch').focus(); });
+  $('locationSearch').addEventListener('input', () => { clearTimeout(state.searchTimer); state.searchTimer = setTimeout(searchLocations, 260); });$('locationSearch').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); searchLocations(); } });
+  $('locationSearchButton').addEventListener('click', searchLocations);$('suggestions').addEventListener('click', event => { const button = event.target.closest('[data-place-id]'); if (button) selectLocation(button.dataset.placeId); });
+  $('locations').addEventListener('click', event => { const button = event.target.closest('[data-remove-location]'); if (!button) return; state.locations.splice(Number(button.dataset.removeLocation), 1); renderLocations(); save(); });$('addProduct').addEventListener('click', addProduct); $('productEntry').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); addProduct(); } });$('productChips').addEventListener('click', event => { const button = event.target.closest('[data-remove-product]'); if (!button) return; state.products = state.products.filter(id => id !== button.dataset.removeProduct); renderProducts(); save(); });
+  $('sound').addEventListener('click', async () => { state.muted = !state.muted; if (!state.muted) { await unlockAudio(); if (state.rows.some(row => row.available)) startStockAlarm(); else beep(); } else stopStockAlarm(); updateSound(); save(); });$('interval').addEventListener('change', save); $('start').addEventListener('click', start);$('stop').addEventListener('click', stop);
+  $('deviceId').textContent = deviceId; $('copyDeviceId').addEventListener('click', async () => { try { await navigator.clipboard.writeText(deviceId); licenseMessage('Device ID copied. Send it to the admin.'); } catch { licenseMessage('Select and copy the Device ID manually.'); } });
   window.addEventListener('online', () => setNetwork('ok', 'Connected')); window.addEventListener('offline', () => setNetwork('error', 'Offline'));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && state.running) requestWakeLock(); });
   window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); state.prompt = event; $('install').style.display = 'block'; });
   $('install').addEventListener('click', async () => { if (!state.prompt) return; state.prompt.prompt(); await state.prompt.userChoice; state.prompt = null; $('install').style.display = 'none'; });
-   try { const stored = JSON.parse(localStorage.getItem(STORE) || '{}'); state.locations = Array.isArray(stored.locations) ? stored.locations.slice(0, MAX_LOCATIONS) : []; state.products = Array.isArray(stored.products) ? stored.products : []; state.rows = Array.isArray(stored.rows) ? stored.rows : []; if (stored.intervalPreference && stored.interval) $('interval').value = stored.interval; else $('interval').value = DEFAULT_INTERVAL; if (typeof stored.muted === 'boolean' && stored.soundPreference) state.muted = stored.muted; } catch {}
-   renderProducts(); renderLocations(); renderResults(); renderStockAlert(state.rows); updateSound(); setNetwork(navigator.onLine ? 'ok' : 'error', navigator.onLine ? 'Connected' : 'Offline');
-    verifyDevice().catch(error => licenseMessage(error.message, true));
+  try { const stored = JSON.parse(localStorage.getItem(STORE) || '{}'); state.locations = Array.isArray(stored.locations) ? stored.locations.slice(0, MAX_LOCATIONS) : []; state.products = Array.isArray(stored.products) ? stored.products : []; state.rows = Array.isArray(stored.rows) ? stored.rows : []; if (stored.intervalPreference && stored.interval) $('interval').value = stored.interval; else$('interval').value = DEFAULT_INTERVAL; if (typeof stored.muted === 'boolean' && stored.soundPreference) state.muted = stored.muted; } catch {}
+  renderProducts(); renderLocations(); renderResults(); renderStockAlert(state.rows); updateSound(); setNetwork(navigator.onLine ? 'ok' : 'error', navigator.onLine ? 'Connected' : 'Offline');
+  verifyDevice().catch(error => licenseMessage(error.message, true));
 })();
