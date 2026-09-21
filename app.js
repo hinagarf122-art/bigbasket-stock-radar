@@ -118,7 +118,7 @@
     licenseMessage('Checking device activation...');
     const response = await fetch('/api/license', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ license:deviceId }) });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.valid) throw new Error('This device is not activated yet.');
+    if (!response.ok || !data.valid) throw new Error('This device is not activated yet. Add its Device ID to licenses.json.');
     state.licensed = true; state.license = deviceId; document.body.classList.add('licensed');
     licenseMessage('Device active. Next check in 30 seconds.');
     stopLicenseWatch();
@@ -153,7 +153,7 @@
   function wait(milliseconds) { return new Promise(resolve => { const done = () => { clearTimeout(state.timer); state.timer = null; state.wake = null; resolve(); }; state.wake = done; state.timer = setTimeout(done, milliseconds); }); }
   async function start() {
     if (state.running) return;
-    if (!state.licensed) throw new Error('This device is not activated yet.');
+    if (!state.licensed) throw new Error('This device is not activated yet. Add its Device ID to licenses.json.');
     await unlockAudio();
     stopStockAlarm();
     state.lastAvailable = new Set();
@@ -174,7 +174,7 @@
   $('addProduct').addEventListener('click', addProduct); $('productEntry').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); addProduct(); } });
   $('productChips').addEventListener('click', event => { const button = event.target.closest('[data-remove-product]'); if (!button) return; state.products = state.products.filter(id => id !== button.dataset.removeProduct); renderProducts(); save(); });
    $('sound').addEventListener('click', async () => { state.muted = !state.muted; if (!state.muted) { await unlockAudio(); if (state.rows.some(row => row.available)) startStockAlarm(); else beep(); } else stopStockAlarm(); updateSound(); save(); });
-   $('interval').addEventListener('change', save); $('start').addEventListener('click', start); $('stop').addEventListener('click', stop); $('awake').addEventListener('click', () => setKeepAwake(!state.keepAwake)); document.addEventListener('visibilitychange', () => { if (state.keepAwake && document.visibilityState === 'visible') setKeepAwake(true); });
+   $('interval').addEventListener('change', save); $('start').addEventListener('click', () => start().catch(error => { $('status').textContent = error.message; setNetwork('error', 'Check failed'); })); $('stop').addEventListener('click', stop); $('awake').addEventListener('click', () => setKeepAwake(!state.keepAwake)); document.addEventListener('visibilitychange', () => { if (state.keepAwake && document.visibilityState === 'visible') setKeepAwake(true); });
     $('deviceId').textContent = deviceId; $('copyDeviceId').addEventListener('click', async () => { try { await navigator.clipboard.writeText(deviceId); licenseMessage('Device ID copied. Send it to the admin.'); } catch { licenseMessage('Select and copy the Device ID manually.'); } });
   window.addEventListener('online', () => setNetwork('ok', 'Connected')); window.addEventListener('offline', () => setNetwork('error', 'Offline'));
   window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); state.prompt = event; $('install').style.display = 'block'; });
