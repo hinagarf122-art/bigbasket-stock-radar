@@ -114,15 +114,20 @@
   function stopLicenseWatch() { clearInterval(state.licenseTimer); state.licenseTimer = null; }
   function licenseMessage(text, error = false) { $('licenseStatus').textContent = text; $('licenseStatus').classList.toggle('error', error); }
   function lockApp(message) { state.licensed = false; stopLicenseWatch(); stop(); document.body.classList.remove('licensed'); licenseMessage(message, true); }
-  async function verifyDevice() {
+  async function verifyDevice(recheck = false) {
     licenseMessage('Checking device activation...');
-    const response = await fetch('/api/license', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ license:deviceId }) });
+    let response;
+    try { response = await fetch('/api/license', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ license:deviceId }) }); } catch (error) {
+      if (recheck && state.licensed) { setNetwork('error', 'Activation check retrying'); licenseMessage('Temporary connection issue. Retrying in 30 seconds.'); return false; }
+      throw error;
+    }
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.valid) throw new Error('This device is not activated yet. Add its Device ID to licenses.json.');
     state.licensed = true; state.license = deviceId; document.body.classList.add('licensed');
     licenseMessage('Device active. Next check in 30 seconds.');
+    if (recheck) setNetwork('ok', 'Connected');
     stopLicenseWatch();
-    state.licenseTimer = setInterval(() => verifyDevice().catch(error => lockApp(error.message)), 30000);
+    state.licenseTimer = setInterval(() => verifyDevice(true).catch(error => lockApp(error.message)), 30000);
   }
 
   async function scan(retryErrors = false) {
