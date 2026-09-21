@@ -85,6 +85,7 @@ async function handle(req, res) {
     return res.end('Not found');
   }
   res.setHeader('Content-Type', file[1]);
+  res.setHeader('Cache-Control', 'no-store');
   return fs.createReadStream(path.join(ROOT, file[0])).pipe(res);
 }
 

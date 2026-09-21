@@ -132,6 +132,7 @@
     const locations = retryErrors ? state.locations.filter(location => failed.some(row => String(row.pincode) === String(location.pincode))) : state.locations;
     if (!products.length || !locations.length) return;
     $('status').textContent = retryErrors ? `Retrying ${failed.length} failed checks...` : `Checking ${products.length * locations.length} location checks...`;
+    $('lastChecked').textContent = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
     $('progress').style.width = '18%';
     const response = await fetch('/api/stock', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ products, locations }) });
     const data = await response.json().catch(() => ({}));
@@ -139,7 +140,6 @@
     const received = Array.isArray(data.results) ? data.results : [];
     if (retryErrors) { const replacements = new Map(received.map(row => [`${row.productId}:${row.pincode}`, row])); state.rows = state.rows.map(row => replacements.get(`${row.productId}:${row.pincode}`) || row); } else state.rows = received;
     $('progress').style.width = '100%';
-    $('lastChecked').textContent = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
     const errorCount = state.rows.filter(row => row.error).length;
     $('status').textContent = errorCount ? `${errorCount} checks failed. Retrying in 8 seconds.` : state.rows.some(row => row.available) ? 'Stock found in one or more selected locations.' : 'No stock found in the selected locations.';
     renderResults(); save(); setNetwork('ok', 'Live data received');
