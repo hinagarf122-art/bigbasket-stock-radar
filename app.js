@@ -4,9 +4,11 @@
   const DEFAULT_INTERVAL = '4';
   const STORE = 'bigbasket_stock_radar_v1';
   const DEVICE_STORE = 'bigbasket_stock_device_v1';
+  const ALERT_AUDIO = 'nachte_milenge_hanumana.mp3';
+  const ALERT_START = 35;
   function getDeviceId() { try { const saved = localStorage.getItem(DEVICE_STORE); if (saved) return saved; const id = window.crypto?.randomUUID?.() || `dev-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`; localStorage.setItem(DEVICE_STORE, id); return id; } catch { return `dev-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`; } }
   const deviceId = getDeviceId();
-  const state = { locations: [], products: [], rows: [], lastAvailable: new Set(), running: false, timer: null, wake: null, alarmTimer: null, keepAwake: false, wakeLock: null, wakeTimer: null, prompt: null, audio: null, licensed: false, license: '', licenseTimer: null };
+  const state = { locations: [], products: [], rows: [], lastAvailable: new Set(), running: false, timer: null, wake: null, alarmTimer: null, keepAwake: false, wakeLock: null, wakeTimer: null, prompt: null, alertAudio: null, licensed: false, license: '', licenseTimer: null };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
   const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ locations:state.locations, products:state.products, interval:$('interval').value, intervalPreference:true, muted:state.muted, soundPreference:true, rows:state.rows })); } catch {} };
@@ -105,10 +107,10 @@
     $('productEntry').value = ''; renderProducts(); save();
   }
 
-  async function unlockAudio() { try { state.audio ||= new (window.AudioContext || window.webkitAudioContext)(); if (state.audio.state === 'suspended') await Promise.race([state.audio.resume(), new Promise(resolve => setTimeout(resolve, 500))]); } catch {} }
-  function beep() { if (state.muted || !state.audio || state.audio.state !== 'running') return; try { const now = state.audio.currentTime; [392,440,523.25,587.33,523.25,440].forEach((frequency, index) => { const start = now + index * .13; const osc = state.audio.createOscillator(); const gain = state.audio.createGain(); osc.type = 'sine'; osc.frequency.setValueAtTime(frequency, start); gain.gain.setValueAtTime(.001, start); gain.gain.exponentialRampToValueAtTime(.14, start + .025); gain.gain.exponentialRampToValueAtTime(.001, start + .3); osc.connect(gain).connect(state.audio.destination); osc.start(start); osc.stop(start + .32); }); } catch {} }
-  function stopStockAlarm() { clearInterval(state.alarmTimer); state.alarmTimer = null; }
-  function startStockAlarm() { if (state.muted || state.alarmTimer || !state.audio || state.audio.state !== 'running') return; beep(); state.alarmTimer = setInterval(() => { if (state.muted || !state.audio || state.audio.state !== 'running') return stopStockAlarm(); beep(); }, 1400); }
+  async function unlockAudio() { try { state.alertAudio ||= new Audio(ALERT_AUDIO); state.alertAudio.preload = 'auto'; state.alertAudio.volume = 1; state.alertAudio.currentTime = ALERT_START; const play = state.alertAudio.play(); if (play) await Promise.race([play, new Promise(resolve => setTimeout(resolve, 500))]); state.alertAudio.pause(); state.alertAudio.currentTime = ALERT_START; } catch {} }
+  function playAlertAudio() { if (state.muted || !state.alertAudio) return; try { state.alertAudio.currentTime = ALERT_START; state.alertAudio.play().catch(() => {}); } catch {} }
+  function stopStockAlarm() { clearInterval(state.alarmTimer); state.alarmTimer = null; if (state.alertAudio) { state.alertAudio.pause(); state.alertAudio.currentTime = ALERT_START; } }
+  function startStockAlarm() { if (state.muted || state.alarmTimer || !state.alertAudio) return; playAlertAudio(); state.alarmTimer = setInterval(() => { if (state.muted || !state.alertAudio) return stopStockAlarm(); if (state.alertAudio.ended) playAlertAudio(); }, 1000); }
   function updateSound() { $('sound').textContent = `Sound: ${state.muted ? 'off' : 'on'}`; $('sound').classList.toggle('on', !state.muted); }
 
   function stopLicenseWatch() { clearInterval(state.licenseTimer); state.licenseTimer = null; }
@@ -178,7 +180,7 @@
   $('locations').addEventListener('click', event => { const button = event.target.closest('[data-remove-location]'); if (!button) return; state.locations.splice(Number(button.dataset.removeLocation), 1); renderLocations(); save(); });
   $('addProduct').addEventListener('click', addProduct); $('productEntry').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); addProduct(); } });
   $('productChips').addEventListener('click', event => { const button = event.target.closest('[data-remove-product]'); if (!button) return; state.products = state.products.filter(id => id !== button.dataset.removeProduct); renderProducts(); save(); });
-   $('sound').addEventListener('click', async () => { state.muted = !state.muted; if (!state.muted) { await unlockAudio(); if (state.rows.some(row => row.available)) startStockAlarm(); else beep(); } else stopStockAlarm(); updateSound(); save(); });
+   $('sound').addEventListener('click', async () => { state.muted = !state.muted; if (!state.muted) { await unlockAudio(); if (state.rows.some(row => row.available)) startStockAlarm(); } else stopStockAlarm(); updateSound(); save(); });
    $('interval').addEventListener('change', save); $('start').addEventListener('click', () => start().catch(error => { $('status').textContent = error.message; setNetwork('error', 'Check failed'); })); $('stop').addEventListener('click', stop); $('awake').addEventListener('click', () => setKeepAwake(!state.keepAwake)); document.addEventListener('visibilitychange', () => { if (state.keepAwake && document.visibilityState === 'visible') setKeepAwake(true); });
     $('deviceId').textContent = deviceId; $('copyDeviceId').addEventListener('click', async () => { try { await navigator.clipboard.writeText(deviceId); licenseMessage('Device ID copied. Send it to the admin.'); } catch { licenseMessage('Select and copy the Device ID manually.'); } });
   window.addEventListener('online', () => setNetwork('ok', 'Connected')); window.addEventListener('offline', () => setNetwork('error', 'Offline'));
