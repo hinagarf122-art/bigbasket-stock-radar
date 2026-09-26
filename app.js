@@ -5,7 +5,7 @@
   const STORE = 'bigbasket_stock_radar_v1';
   const DEVICE_STORE = 'bigbasket_stock_device_v1';
   const ALERT_AUDIO = 'nachte_milenge_hanumana.mp3';
-  const ALERT_START = 35;
+  const ALERT_START = 37;
   function getDeviceId() { try { const saved = localStorage.getItem(DEVICE_STORE); if (saved) return saved; const id = window.crypto?.randomUUID?.() || `dev-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`; localStorage.setItem(DEVICE_STORE, id); return id; } catch { return `dev-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`; } }
   const deviceId = getDeviceId();
   const state = { locations: [], products: [], rows: [], lastAvailable: new Set(), running: false, timer: null, wake: null, alarmTimer: null, keepAwake: false, wakeLock: null, wakeTimer: null, prompt: null, alertAudio: null, licensed: false, license: '', licenseTimer: null };
