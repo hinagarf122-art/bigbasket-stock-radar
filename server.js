@@ -16,6 +16,7 @@ const files = {
   '/manifest.json': ['manifest.json', 'application/manifest+json; charset=utf-8'],
   '/sw.js': ['sw.js', 'text/javascript; charset=utf-8'],
   '/icon-512.png': ['icon-512.png', 'image/png'],
+  '/nachte_milenge_hanumana.mp3': ['nachte_milenge_hanumana.mp3', 'audio/mpeg'],
 };
 
 function responseAdapter(res) {
