@@ -44,8 +44,9 @@ Notes
   routes can change or rate-limit automated requests without notice.
 - BigBasket's Next.js product build ID is kept in `api/bigbasket.js` and may
   need updating after a BigBasket frontend deployment.
-- The UI supports 1 to 10 locations and defaults to one check every 4 seconds;
+- The UI supports 1 to 20 locations and defaults to one check every 4 seconds;
   aggressive polling can trigger BigBasket rate limits or temporary blocks.
+- Stock alerts use a short devotional-style Shree Ram melody and repeat while stock is available.
 - Failed product/location checks are retried after 8 seconds until they recover.
 - The bottom `Keep screen awake` button uses the browser Screen Wake Lock API and refreshes the lock every 10 minutes when supported.
 - When stock is available, the alert sound repeats until the item is no longer

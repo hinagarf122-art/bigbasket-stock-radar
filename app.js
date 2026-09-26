@@ -1,6 +1,6 @@
 (() => {
   const MAX_PRODUCTS = 30;
-  const MAX_LOCATIONS = 10;
+  const MAX_LOCATIONS = 20;
   const DEFAULT_INTERVAL = '4';
   const STORE = 'bigbasket_stock_radar_v1';
   const DEVICE_STORE = 'bigbasket_stock_device_v1';
@@ -106,9 +106,9 @@
   }
 
   async function unlockAudio() { try { state.audio ||= new (window.AudioContext || window.webkitAudioContext)(); if (state.audio.state === 'suspended') await Promise.race([state.audio.resume(), new Promise(resolve => setTimeout(resolve, 500))]); } catch {} }
-  function beep() { if (state.muted || !state.audio || state.audio.state !== 'running') return; try { const now = state.audio.currentTime; const osc = state.audio.createOscillator(); const gain = state.audio.createGain(); osc.type = 'sine'; osc.frequency.setValueAtTime(880, now); osc.frequency.setValueAtTime(660, now + .16); gain.gain.setValueAtTime(.001, now); gain.gain.exponentialRampToValueAtTime(.18, now + .02); gain.gain.exponentialRampToValueAtTime(.001, now + .42); osc.connect(gain).connect(state.audio.destination); osc.start(now); osc.stop(now + .45); } catch {} }
+  function beep() { if (state.muted || !state.audio || state.audio.state !== 'running') return; try { const now = state.audio.currentTime; [392,440,523.25,587.33,523.25,440].forEach((frequency, index) => { const start = now + index * .13; const osc = state.audio.createOscillator(); const gain = state.audio.createGain(); osc.type = 'sine'; osc.frequency.setValueAtTime(frequency, start); gain.gain.setValueAtTime(.001, start); gain.gain.exponentialRampToValueAtTime(.14, start + .025); gain.gain.exponentialRampToValueAtTime(.001, start + .3); osc.connect(gain).connect(state.audio.destination); osc.start(start); osc.stop(start + .32); }); } catch {} }
   function stopStockAlarm() { clearInterval(state.alarmTimer); state.alarmTimer = null; }
-  function startStockAlarm() { if (state.muted || state.alarmTimer || !state.audio || state.audio.state !== 'running') return; beep(); state.alarmTimer = setInterval(() => { if (state.muted || !state.audio || state.audio.state !== 'running') return stopStockAlarm(); beep(); }, 900); }
+  function startStockAlarm() { if (state.muted || state.alarmTimer || !state.audio || state.audio.state !== 'running') return; beep(); state.alarmTimer = setInterval(() => { if (state.muted || !state.audio || state.audio.state !== 'running') return stopStockAlarm(); beep(); }, 1400); }
   function updateSound() { $('sound').textContent = `Sound: ${state.muted ? 'off' : 'on'}`; $('sound').classList.toggle('on', !state.muted); }
 
   function stopLicenseWatch() { clearInterval(state.licenseTimer); state.licenseTimer = null; }
