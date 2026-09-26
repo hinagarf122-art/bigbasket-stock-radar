@@ -56,6 +56,7 @@
 
   function renderStockAlert(rows, preferredRow = null) {
     const available = rows.filter(row => row.available);
+    if (!available.length) stopStockAlarm();
     const row = preferredRow || available[0];
     $('stockAlert').classList.toggle('show', Boolean(available.length));
     if (row) $('stockAlertText').textContent = `${row.name || `Product ${row.productId}`} - ${row.locationLabel || row.pincode}`;
