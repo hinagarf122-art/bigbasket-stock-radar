@@ -1,7 +1,7 @@
 const { createLocationSession, checkProduct } = require('./bigbasket');
 
 const MAX_PRODUCTS = 30;
-const MAX_LOCATIONS = 10;
+const MAX_LOCATIONS = 20;
 function reply(res, status, body) { return res.status(status).json(body); }
 function validProduct(value) { return /^\d{3,20}$/.test(String(value || '')); }
 function validLocation(item) { return item && /^\d{6}$/.test(String(item.pincode || '')) && Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng)); }
