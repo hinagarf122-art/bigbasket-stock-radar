@@ -4,7 +4,7 @@
   const DEFAULT_INTERVAL = '4';
   const STORE = 'bigbasket_stock_radar_v1';
   const DEVICE_STORE = 'bigbasket_stock_device_v1';
-  const ALERT_AUDIO = 'whatsapp_video_2026-09-26_at_11.33.59_am.mp4';
+  const ALERT_AUDIO = 'whatsapp_video_2026-09-26_at_11.33.59_am.mp3';
   const ALERT_START = 0;
   function getDeviceId() { try { const saved = localStorage.getItem(DEVICE_STORE); if (saved) return saved; const id = window.crypto?.randomUUID?.() || `dev-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`; localStorage.setItem(DEVICE_STORE, id); return id; } catch { return `dev-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`; } }
   const deviceId = getDeviceId();

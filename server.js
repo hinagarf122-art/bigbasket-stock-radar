@@ -18,6 +18,7 @@ const files = {
   '/icon-512.png': ['icon-512.png', 'image/png'],
   '/nachte_milenge_hanumana.mp3': ['nachte_milenge_hanumana.mp3', 'audio/mpeg'],
   '/whatsapp_video_2026-09-26_at_11.33.59_am.mp4': ['whatsapp_video_2026-09-26_at_11.33.59_am.mp4', 'video/mp4'],
+  '/whatsapp_video_2026-09-26_at_11.33.59_am.mp3': ['whatsapp_video_2026-09-26_at_11.33.59_am.mp3', 'audio/mpeg'],
 };
 
 function responseAdapter(res) {
