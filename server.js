@@ -86,9 +86,27 @@ async function handle(req, res) {
     res.statusCode = 404;
     return res.end('Not found');
   }
-  res.setHeader('Content-Type', file[1]);
   res.setHeader('Cache-Control', 'no-store');
-  return fs.createReadStream(path.join(ROOT, file[0])).pipe(res);
+  const filePath = path.join(ROOT, file[0]);
+  const size = fs.statSync(filePath).size;
+  res.setHeader('Content-Type', file[1]);
+  res.setHeader('Accept-Ranges', 'bytes');
+  const range = req.headers.range;
+  if (range) {
+    const match = range.match(/bytes=(\d*)-(\d*)/);
+    if (match) {
+      const start = match[1] ? Number(match[1]) : Math.max(0, size - Number(match[2]) - 1);
+      const end = match[2] ? Math.min(size - 1, Number(match[2])) : size - 1;
+      if (start <= end && start < size) {
+        res.statusCode = 206;
+        res.setHeader('Content-Range', `bytes ${start}-${end}/${size}`);
+        res.setHeader('Content-Length', end - start + 1);
+        return fs.createReadStream(filePath, { start, end }).pipe(res);
+      }
+    }
+  }
+  res.setHeader('Content-Length', size);
+  return fs.createReadStream(filePath).pipe(res);
 }
 
 const server = http.createServer((req, res) => {
