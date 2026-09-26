@@ -11,7 +11,7 @@
   const state = { locations: [], products: [], rows: [], lastAvailable: new Set(), running: false, timer: null, wake: null, alarmTimer: null, keepAwake: false, wakeLock: null, wakeTimer: null, prompt: null, alertAudio: null, licensed: false, license: '', licenseTimer: null };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
-  const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ locations:state.locations, products:state.products, interval:$('interval').value, intervalPreference:true, muted:state.muted, soundPreference:true, rows:state.rows })); } catch {} };
+  const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ locations:state.locations, products:state.products, interval:$('interval').value, intervalPreference:true, muted:state.muted, soundPreference:true, keepAwake:state.keepAwake, rows:state.rows })); } catch {} };
 
   function productId(value) {
     const text = String(value || '').trim();
@@ -171,7 +171,7 @@
     finally { state.running = false; $('start').disabled = false; $('stop').disabled = true; $('start').textContent = 'Start live checking'; }
   }
   function stop() { state.running = false; stopStockAlarm(); clearTimeout(state.timer); state.timer = null; if (state.wake) state.wake(); $('status').textContent = 'Stopped. Last results are kept below.'; }
-  async function setKeepAwake(enabled) { state.keepAwake = enabled; clearInterval(state.wakeTimer); state.wakeTimer = null; if (!enabled) { await state.wakeLock?.release?.(); state.wakeLock = null; $('awake').textContent = 'Keep screen awake'; $('awake').classList.remove('on'); return; } if (!('wakeLock' in navigator)) { state.keepAwake = false; $('awake').textContent = 'Wake lock unavailable'; return; } try { await state.wakeLock?.release?.(); state.wakeLock = await navigator.wakeLock.request('screen'); $('awake').textContent = 'Screen awake: on'; $('awake').classList.add('on'); state.wakeTimer = setInterval(() => { if (document.visibilityState === 'visible') setKeepAwake(true); }, 600000); } catch { state.keepAwake = false; $('awake').textContent = 'Wake lock unavailable'; } }
+  async function setKeepAwake(enabled) { state.keepAwake = enabled; clearInterval(state.wakeTimer); state.wakeTimer = null; if (!enabled) { await state.wakeLock?.release?.(); state.wakeLock = null; $('awake').textContent = 'Keep screen awake'; $('awake').classList.remove('on'); save(); return; } if (!('wakeLock' in navigator)) { state.keepAwake = false; $('awake').textContent = 'Wake lock unavailable'; save(); return; } try { await state.wakeLock?.release?.(); state.wakeLock = await navigator.wakeLock.request('screen'); $('awake').textContent = 'Screen awake: on'; $('awake').classList.add('on'); state.wakeTimer = setInterval(() => { if (document.visibilityState === 'visible') setKeepAwake(true); }, 600000); save(); } catch { state.keepAwake = false; $('awake').textContent = 'Wake lock unavailable'; save(); } }
 
   $('locationButton').addEventListener('click', () => { $('locationSearch').scrollIntoView({ behavior:'smooth', block:'center' }); $('locationSearch').focus(); });
   $('locationSearch').addEventListener('input', () => { clearTimeout(state.searchTimer); state.searchTimer = setTimeout(searchLocations, 260); });
@@ -187,7 +187,7 @@
   window.addEventListener('online', () => setNetwork('ok', 'Connected')); window.addEventListener('offline', () => setNetwork('error', 'Offline'));
   window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); state.prompt = event; $('install').style.display = 'block'; });
   $('install').addEventListener('click', async () => { if (!state.prompt) return; state.prompt.prompt(); await state.prompt.userChoice; state.prompt = null; $('install').style.display = 'none'; });
-   try { const stored = JSON.parse(localStorage.getItem(STORE) || '{}'); state.locations = Array.isArray(stored.locations) ? stored.locations.slice(0, MAX_LOCATIONS) : []; state.products = Array.isArray(stored.products) ? stored.products : []; state.rows = Array.isArray(stored.rows) ? stored.rows : []; if (stored.intervalPreference && stored.interval) $('interval').value = stored.interval; else $('interval').value = DEFAULT_INTERVAL; if (typeof stored.muted === 'boolean' && stored.soundPreference) state.muted = stored.muted; } catch {}
+    try { const stored = JSON.parse(localStorage.getItem(STORE) || '{}'); state.locations = Array.isArray(stored.locations) ? stored.locations.slice(0, MAX_LOCATIONS) : []; state.products = Array.isArray(stored.products) ? stored.products : []; state.rows = Array.isArray(stored.rows) ? stored.rows : []; if (stored.intervalPreference && stored.interval) $('interval').value = stored.interval; else $('interval').value = DEFAULT_INTERVAL; if (typeof stored.muted === 'boolean' && stored.soundPreference) state.muted = stored.muted; if (stored.keepAwake === true) state.keepAwake = true; } catch {}
    renderProducts(); renderLocations(); renderResults(); renderStockAlert(state.rows); updateSound(); setNetwork(navigator.onLine ? 'ok' : 'error', navigator.onLine ? 'Connected' : 'Offline');
-    verifyDevice().catch(error => licenseMessage(error.message, true));
+    verifyDevice().then(() => { if (state.keepAwake) setKeepAwake(true); }).catch(error => licenseMessage(error.message, true));
 })();
